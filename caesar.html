@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>凯撒密码转盘 - 线上道具</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;font-family:Arial,sans-serif}
+  body{background:#f8f9fa;padding:20px}
+  .login-box{max-width:320px;margin:100px auto;padding:24px;background:white;border-radius:12px;box-shadow:0 0 10px #00000010}
+  .login-box h2{margin-bottom:16px;font-size:18px;text-align:center}
+  .login-box input{width:100%;padding:10px;margin-bottom:12px;border:1px solid #ddd;border-radius:8px;font-size:16px}
+  .login-box button{width:100%;padding:10px;background:#e63946;color:white;border:none;border-radius:8px;font-size:16px;cursor:pointer}
+  .tip{color:#666;font-size:12px;text-align:center;margin-top:8px}
+  .hidden{display:none}
+  .error{color:#e63946;font-size:12px;margin-top:8px;text-align:center;display:none}
+</style>
+</head>
+
+<body>
+<!-- 密码登录层 -->
+<div id="loginPanel" class="login-box">
+  <h2>请输入口令进入道具</h2>
+  <input type="text" id="pwdInput" placeholder="输入口令" autocomplete="off">
+  <button id="loginBtn">确认进入</button>
+  <div class="tip">仅首次进入需要输入口令</div>
+  <div id="errorMsg" class="error"></div>
+</div>
+
+<!-- 凯撒转盘页面 -->
+<div id="toolPanel" class="hidden">
+  <h1 style="text-align:center;margin-bottom:10px">凯撒密码转盘</h1>
+  <p style="text-align:center;color:#666;margin-bottom:10px">拖动红色内盘旋转 · 点击复位键回到初始位置</p>
+
+  <div style="display:flex;flex-direction:column;align-items:center;gap:16px">
+    <div style="position:relative;width:340px;height:340px">
+      <div id="outer" style="width:100%;height:100%;border-radius:50%;background:#1f4e79;position:relative;box-shadow:0 0 25px rgba(0,0,0,0.2)"></div>
+      <div id="inner" style="width:260px;height:260px;border-radius:50%;background:#e63946;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);cursor:grab;box-shadow:0 0 20px rgba(0,0,0,0.25);z-index:10">
+        <div style="width:22px;height:22px;background:#fff;border-radius:50%;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:20"></div>
+      </div>
+    </div>
+    <div id="shiftText" style="font-size:20px;font-weight:bold">偏移 0 位</div>
+    <button id="resetBtn" style="padding:8px 18px;background:#e63946;color:white;border:none;border-radius:8px">复位键</button>
+  </div>
+
+  <div style="max-width:340px;margin:20px auto 0">
+    <div style="margin-bottom:10px">
+      <label style="display:block;margin-bottom:5px;font-weight:bold">输入内容</label>
+      <textarea id="cipherInput" placeholder="输入内圈字母..." style="width:100%;height:60px;padding:10px;border:1px solid #ccc;border-radius:8px;resize:none"></textarea>
+    </div>
+    <div>
+      <label style="display:block;margin-bottom:5px;font-weight:bold">输出结果</label>
+      <textarea id="plainOutput" readonly placeholder="输出外圈字母..." style="width:100%;height:60px;padding:10px;border:1px solid #ccc;border-radius:8px;resize:none"></textarea>
+    </div>
+  </div>
+</div>
+
+<script>
+// ==============================================
+// 1. 口令设置
+// ==============================================
+const PASSWORD = "adcaesar";
+
+let clickSound = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==");
+let lastShift = 0;
+let lastValidDirection = null; // 记录最后一次有效的旋转方向：'clockwise' 或 'counterclockwise'
+
+function playClickSound() {
+  if (clickSound) {
+    clickSound.currentTime = 0;
+    clickSound.play().catch(e => console.log("音频播放失败:", e));
+  }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  try {
+    const hasAccess = localStorage.getItem("hasAccess");
+    if (hasAccess === "true") {
+      showTool();
+    }
+  } catch (error) {
+    console.error("localStorage访问失败:", error);
+  }
+  
+  const loginBtn = document.getElementById('loginBtn');
+  const pwdInput = document.getElementById('pwdInput');
+  
+  if (loginBtn) {
+    loginBtn.addEventListener('click', checkPwd);
+    pwdInput.addEventListener('keypress', function(event) {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        checkPwd();
+      }
+    });
+  }
+});
+
+function showTool() {
+  const loginPanel = document.getElementById("loginPanel");
+  const toolPanel = document.getElementById("toolPanel");
+  if (loginPanel && toolPanel) {
+    loginPanel.classList.add("hidden");
+    toolPanel.classList.remove("hidden");
+    initCipherWheel();
+  }
+}
+
+function checkPwd() {
+  const pwdInput = document.getElementById("pwdInput");
+  const errorMsg = document.getElementById("errorMsg");
+  if (!pwdInput) return;
+  const val = pwdInput.value.trim();
+  if (!val) {
+    showError("请输入口令");
+    return;
+  }
+  if (val.toLowerCase() === PASSWORD.toLowerCase()) {
+    try {
+      localStorage.setItem("hasAccess", "true");
+      showTool();
+    } catch (error) {
+      showError("无法保存登录状态");
+    }
+  } else {
+    showError("口令不正确，请重新输入");
+  }
+}
+
+function showError(message) {
+  const errorMsg = document.getElementById("errorMsg");
+  if (errorMsg) {
+    errorMsg.textContent = message;
+    errorMsg.style.display = 'block';
+    setTimeout(() => { errorMsg.style.display = 'none'; }, 3000);
+  }
+}
+
+// ======================
+// 凯撒转盘核心逻辑
+// ======================
+let isCipherInitialized = false;
+let letters, stepAngle, currentRotate, isDrag, lastMouseAngle;
+let inner, outer, shiftText, cipherInput, plainOutput;
+
+function initCipherWheel() {
+  if (isCipherInitialized) return;
+  isCipherInitialized = true;
+  
+  letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  stepAngle = 360 / 26;
+  currentRotate = 0;
+  isDrag = false;
+  lastMouseAngle = 0;
+  lastValidDirection = null;
+  
+  inner = document.getElementById("inner");
+  outer = document.getElementById("outer");
+  shiftText = document.getElementById("shiftText");
+  cipherInput = document.getElementById("cipherInput");
+  plainOutput = document.getElementById("plainOutput");
+  const resetBtn = document.getElementById("resetBtn");
+
+  if (!inner || !outer) return;
+
+  function makeOuter() {
+    const r = 155, cx = 170, cy = 170;
+    for (let i = 0; i < 26; i++) {
+      const ang = i * stepAngle * Math.PI / 180 - Math.PI / 2;
+      const x = cx + r * Math.cos(ang);
+      const y = cy + r * Math.sin(ang);
+      const el = document.createElement("div");
+      el.className = "char";
+      el.textContent = letters[i];
+      el.style.position = "absolute";
+      el.style.width = "32px";
+      el.style.height = "32px";
+      el.style.display = "flex";
+      el.style.alignItems = "center";
+      el.style.justifyContent = "center";
+      el.style.color = "white";
+      el.style.fontWeight = "bold";
+      el.style.fontSize = "17px";
+      el.style.left = (x - 16) + "px";
+      el.style.top = (y - 16) + "px";
+      outer.appendChild(el);
+    }
+  }
+  
+  function makeInner() {
+    const r = 110, cx = 130, cy = 130;
+    for (let i = 0; i < 26; i++) {
+      const ang = i * stepAngle * Math.PI / 180 - Math.PI / 2;
+      const x = cx + r * Math.cos(ang);
+      const y = cy + r * Math.sin(ang);
+      const el = document.createElement("div");
+      el.className = "char";
+      el.textContent = letters[i];
+      el.style.position = "absolute";
+      el.style.width = "32px";
+      el.style.height = "32px";
+      el.style.display = "flex";
+      el.style.alignItems = "center";
+      el.style.justifyContent = "center";
+      el.style.color = "white";
+      el.style.fontWeight = "bold";
+      el.style.fontSize = "17px";
+      el.style.left = (x - 16) + "px";
+      el.style.top = (y - 16) + "px";
+      inner.appendChild(el);
+    }
+  }
+  
+  makeOuter();
+  makeInner();
+
+  function getDeg(e) {
+    const rect = inner.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const x = e.clientX ?? e.touches[0].clientX;
+    const y = e.clientY ?? e.touches[0].clientY;
+    return Math.atan2(y - cy, x - cx) * 180 / Math.PI;
+  }
+  
+  function getShortestRotation(from, to) {
+    const d = to - from;
+    return d > 180 ? d - 360 : d < -180 ? d + 360 : d;
+  }
+
+  inner.addEventListener("mousedown", e => { isDrag = true; lastMouseAngle = getDeg(e); });
+  inner.addEventListener("touchstart", e => { isDrag = true; lastMouseAngle = getDeg(e); });
+
+  const handleMove = (e) => {
+    if (!isDrag) return;
+    const currentMouseAngle = getDeg(e);
+    const delta = getShortestRotation(lastMouseAngle, currentMouseAngle);
+    
+    // 记录最后一次有效旋转方向（忽略微小抖动）
+    if (Math.abs(delta) > 2) {
+      lastValidDirection = delta > 0 ? 'clockwise' : 'counterclockwise';
+    }
+    
+    currentRotate += delta;
+    inner.style.transform = `translate(-50%, -50%) rotate(${currentRotate}deg)`;
+    updateShift();
+    lastMouseAngle = currentMouseAngle;
+    doMapping();
+  };
+  
+  document.addEventListener("mousemove", handleMove);
+  document.addEventListener("touchmove", handleMove);
+  document.addEventListener("mouseup", () => isDrag = false);
+  document.addEventListener("touchend", () => isDrag = false);
+
+  // 核心函数：计算并显示偏移
+  function updateShift() {
+    // 1. 计算内盘A的当前角度（-90度为初始A位置，在外盘顶部）
+    let innerAAngle = (-90 + currentRotate) % 360;
+    if (innerAAngle < 0) innerAAngle += 360;
+    
+    // 2. 计算顺时针旋转角度（内盘A到外盘A的顺时针角度差，0-360度）
+    let clockwiseAngle = (innerAAngle - (-90) + 360) % 360;
+    
+    // 3. 转换为格数（0-25）
+    let clockwiseSteps = Math.round(clockwiseAngle / stepAngle) % 26;
+    
+    // 4. 计算逆时针格数
+    let counterclockwiseSteps = 26 - clockwiseSteps;
+    if (counterclockwiseSteps === 26) counterclockwiseSteps = 0;
+    
+    // 5. 计算最短距离格数（0-13）
+    let shortestSteps = Math.min(clockwiseSteps, counterclockwiseSteps);
+    
+    // 6. 计算实际用于加密的偏移量（0-25）
+    const rawShift = Math.round(currentRotate / stepAngle) % 26;
+    const realShift = (rawShift + 26) % 26;
+    
+    // 7. 确定显示方向和格数
+    let displayDirection = '向右';
+    let displaySteps = 0;
+    
+    if (shortestSteps === 0) {
+      // 偏移量为0
+      displayDirection = '向右';
+      displaySteps = 0;
+    } else if (shortestSteps === 13) {
+      // 边界情况：A到N，距离13格
+      // 以最后一次有效旋转方向为准
+      if (lastValidDirection === 'clockwise') {
+        displayDirection = '向右';
+        displaySteps = 13;
+      } else if (lastValidDirection === 'counterclockwise') {
+        displayDirection = '向左';
+        displaySteps = 13;
+      } else {
+        // 如果没有记录方向，默认显示"向右13位"
+        displayDirection = '向右';
+        displaySteps = 13;
+      }
+    } else {
+      // 一般情况：判断是顺时针侧还是逆时针侧
+      if (clockwiseSteps <= 13) {
+        // 顺时针侧：A从右边到N
+        displayDirection = '向右';
+        displaySteps = clockwiseSteps;
+      } else {
+        // 逆时针侧：A从左边到N
+        displayDirection = '向左';
+        displaySteps = counterclockwiseSteps;
+      }
+    }
+    
+    // 8. 更新显示
+    if (displaySteps === 0) {
+      shiftText.textContent = "偏移 0 位";
+    } else {
+      shiftText.textContent = `${displayDirection}偏移 ${displaySteps} 位`;
+    }
+    
+    // 9. 播放声音（如果实际加密偏移量发生变化）
+    if (realShift !== lastShift) {
+      playClickSound();
+      lastShift = realShift;
+    }
+  }
+
+  // 加密函数（始终使用右移公式）
+  function doMapping() {
+    // 计算实际加密偏移量（0-25）
+    const steps = Math.round(currentRotate / stepAngle) % 26;
+    const realShift = (steps + 26) % 26;
+    
+    const inputText = cipherInput.value.toUpperCase();
+    let output = "";
+    
+    for (const c of inputText) {
+      if (letters.includes(c)) {
+        const inputIndex = letters.indexOf(c);
+        const outputIndex = (inputIndex + realShift) % 26;
+        output += letters[outputIndex];
+      } else {
+        output += c;
+      }
+    }
+    plainOutput.value = output;
+  }
+
+  function reset() {
+    currentRotate = 0;
+    lastValidDirection = null;
+    inner.style.transform = `translate(-50%, -50%) rotate(0deg)`;
+    updateShift();
+    doMapping();
+    playClickSound();
+  }
+  
+  if (resetBtn) {
+    resetBtn.addEventListener("click", reset);
+  }
+  if (cipherInput) {
+    cipherInput.addEventListener("input", doMapping);
+  }
+  
+  // 初始化显示
+  updateShift();
+  doMapping();
+}
+</script>
+</body>
+</html>
