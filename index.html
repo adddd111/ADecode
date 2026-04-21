@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>凯撒密码转盘 - 线上道具</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: Arial, sans-serif;
+        }
+
+        /* 锁定整个页面，防止滚动 */
+        html, body {
+            overflow: hidden;
+            position: fixed;
+            width: 100%;
+            height: 100%;
+        }
+
+        body {
+            background: #f8f9fa;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .login-box {
+            max-width: 320px;
+            width: 100%;
+            padding: 24px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .login-box h2 {
+            margin-bottom: 16px;
+            font-size: 18px;
+            text-align: center;
+        }
+
+        .login-box input {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+        }
+
+        .login-box button {
+            width: 100%;
+            padding: 10px;
+            background: #e63946;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        .tip {
+            color: #666;
+            font-size: 12px;
+            text-align: center;
+            margin-top: 8px;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .error {
+            color: #e63946;
+            font-size: 12px;
+            margin-top: 8px;
+            text-align: center;
+            display: none;
+        }
+
+        #toolPanel {
+            width: 100%;
+            max-width: 400px;
+            padding: 20px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .wheel-container {
+            position: relative;
+            width: 340px;
+            height: 340px;
+            margin: 0 auto 20px;
+        }
+
+        #outer {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background: #1f4e79;
+            position: relative;
+            box-shadow: 0 0 25px rgba(0, 0, 0, 0.2);
+        }
+
+        #inner {
+            width: 260px;
+            height: 260px;
+            border-radius: 50%;
+            background: #e63946;
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            cursor: grab;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.25);
+            z-index: 10;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+
+        #inner:active {
+            cursor: grabbing;
+        }
+
+        .center-dot {
+            width: 22px;
+            height: 22px;
+            background: #fff;
+            border-radius: 50%;
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 20;
+        }
+
+        .shift-display {
+            text-align: center;
+            font-size: 20px;
+            font-weight: bold;
+            margin: 20px 0;
+        }
+
+        .controls {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        #resetBtn {
+            padding: 8px 18px;
+            background: #e63946;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+
+        .io-container {
+            max-width: 340px;
+            margin: 0 auto;
+        }
+
+        .io-container div {
+            margin-bottom: 10px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+
+        textarea {
+            width: 100%;
+            height: 60px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            resize: none;
+            font-size: 16px;
+        }
+
+        #plainOutput {
+            background: #f5f5f5;
+        }
+    </style>
+</head>
+<body>
+    <!-- 密码登录层 -->
+    <div id="loginPanel" class="login-box">
+        <h2>请输入口令进入道具</h2>
+        <input type="text" id="pwdInput" placeholder="输入口令" autocomplete="off">
+        <button id="loginBtn">确认进入</button>
+        <div class="tip">仅首次进入需要输入口令</div>
+        <div id="errorMsg" class="error"></div>
+    </div>
+
+    <!-- 凯撒转盘页面 -->
+    <div id="toolPanel" class="hidden">
+        <h1 style="text-align:center;margin-bottom:10px">凯撒密码转盘</h1>
+        <p style="text-align:center;color:#666;margin-bottom:10px">拖动红色内盘旋转 · 点击复位键回到初始位置</p>
+
+        <div class="wheel-container">
+            <div id="outer"></div>
+            <div id="inner">
+                <div class="center-dot"></div>
+            </div>
+        </div>
+
+        <div class="shift-display" id="shiftText">偏移 0 位</div>
+
+        <div class="controls">
+            <button id="resetBtn">复位键</button>
+        </div>
+
+        <div class="io-container">
+            <div>
+                <label>输入内容</label>
+                <textarea id="cipherInput" placeholder="输入内圈字母..."></textarea>
+            </div>
+            <div>
+                <label>输出结果</label>
+                <textarea id="plainOutput" readonly placeholder="输出外圈字母..."></textarea>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==============================================
+        // 1. 口令设置
+        // ==============================================
+        const PASSWORD = "adcaesar";
+
+        // ==============================================
+        // 2. 音频处理 - 方案二：柔和的“咔哒”声
+        // ==============================================
+        let clickSound = null;
+        let audioContext = null;
+        let isAudioInitialized = false;
+        let lastShift = 0;
+        let lastValidDirection = null;
+
+        // 初始化音频 - 使用柔和的“咔哒”声
+        function initAudio() {
+            if (isAudioInitialized) return;
+            
+            try {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                
+                // 创建一个频率为400Hz的柔和点击声
+                const duration = 0.03; // 更短，30毫秒
+                const frequency = 400; // 更低频率，更柔和
+                const sampleRate = audioContext.sampleRate;
+                const frameCount = sampleRate * duration;
+                const buffer = audioContext.createBuffer(1, frameCount, sampleRate);
+                const data = buffer.getChannelData(0);
+                
+                // 生成带包络的正弦波
+                for (let i = 0; i < frameCount; i++) {
+                    const t = i / sampleRate;
+                    
+                    // 快速衰减的包络
+                    const attack = Math.min(1, i / (sampleRate * 0.005)); // 5毫秒起音
+                    const release = 1 - (i / frameCount); // 线性释放
+                    const envelope = attack * release;
+                    
+                    // 正弦波
+                    data[i] = Math.sin(2 * Math.PI * frequency * t) * envelope * 0.2; // 更低音量
+                }
+                
+                clickSound = buffer;
+                isAudioInitialized = true;
+                console.log("音频初始化成功 - 柔和咔哒声 (400Hz, 30ms)");
+            } catch (error) {
+                console.warn("音频初始化失败，将继续无声音运行:", error);
+            }
+        }
+
+        // 播放点击声
+        function playClickSound() {
+            if (!isAudioInitialized || !audioContext || !clickSound) return;
+            
+            try {
+                const source = audioContext.createBufferSource();
+                source.buffer = clickSound;
+                source.connect(audioContext.destination);
+                source.start();
+            } catch (error) {
+                console.warn("播放声音失败:", error);
+            }
+        }
+
+        // ==============================================
+        // 3. 登录逻辑
+        // ==============================================
+        document.addEventListener('DOMContentLoaded', function() {
+            // 初始化音频
+            initAudio();
+            
+            // 检查是否已登录
+            try {
+                const hasAccess = localStorage.getItem("hasAccess");
+                if (hasAccess === "true") {
+                    showTool();
+                }
+            } catch (error) {
+                console.error("localStorage访问失败:", error);
+            }
+            
+            // 绑定登录按钮
+            const loginBtn = document.getElementById('loginBtn');
+            const pwdInput = document.getElementById('pwdInput');
+            
+            if (loginBtn) {
+                loginBtn.addEventListener('click', checkPwd);
+                pwdInput.addEventListener('keypress', function(event) {
+                    if (event.key === 'Enter') {
+                        event.preventDefault();
+                        checkPwd();
+                    }
+                });
+            }
+        });
+
+        function showTool() {
+            const loginPanel = document.getElementById("loginPanel");
+            const toolPanel = document.getElementById("toolPanel");
+            if (loginPanel && toolPanel) {
+                loginPanel.classList.add("hidden");
+                toolPanel.classList.remove("hidden");
+                initCipherWheel();
+            }
+        }
+
+        function checkPwd() {
+            const pwdInput = document.getElementById("pwdInput");
+            const errorMsg = document.getElementById("errorMsg");
+            if (!pwdInput) return;
+            
+            const val = pwdInput.value.trim();
+            if (!val) {
+                showError("请输入口令");
+                return;
+            }
+            
+            if (val.toLowerCase() === PASSWORD.toLowerCase()) {
+                try {
+                    localStorage.setItem("hasAccess", "true");
+                    showTool();
+                } catch (error) {
+                    showError("无法保存登录状态");
+                }
+            } else {
+                showError("口令不正确，请重新输入");
+            }
+        }
+
+        function showError(message) {
+            const errorMsg = document.getElementById("errorMsg");
+            if (errorMsg) {
+                errorMsg.textContent = message;
+                errorMsg.style.display = 'block';
+                setTimeout(() => {
+                    errorMsg.style.display = 'none';
+                }, 3000);
+            }
+        }
+
+        // ==============================================
+        // 4. 凯撒转盘核心逻辑
+        // ==============================================
+        function initCipherWheel() {
+            const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+            const stepAngle = 360 / 26;
+            let currentRotate = 0;
+            let isDrag = false;
+            let startAngle = 0;
+            lastValidDirection = null;
+            
+            const inner = document.getElementById("inner");
+            const outer = document.getElementById("outer");
+            const shiftText = document.getElementById("shiftText");
+            const cipherInput = document.getElementById("cipherInput");
+            const plainOutput = document.getElementById("plainOutput");
+            const resetBtn = document.getElementById("resetBtn");
+
+            if (!inner || !outer) return;
+
+            // 生成字母
+            function generateLetters(container, radius, isOuter) {
+                container.innerHTML = '';
+                for (let i = 0; i < 26; i++) {
+                    const angle = (i * stepAngle * Math.PI / 180) - (Math.PI / 2);
+                    const x = radius * Math.cos(angle);
+                    const y = radius * Math.sin(angle);
+                    
+                    const el = document.createElement("div");
+                    el.className = "char";
+                    el.textContent = letters[i];
+                    el.style.position = "absolute";
+                    el.style.width = "32px";
+                    el.style.height = "32px";
+                    el.style.display = "flex";
+                    el.style.alignItems = "center";
+                    el.style.justifyContent = "center";
+                    el.style.color = "white";
+                    el.style.fontWeight = "bold";
+                    el.style.fontSize = "17px";
+                    el.style.left = `calc(50% + ${x}px)`;
+                    el.style.top = `calc(50% + ${y}px)`;
+                    el.style.transform = "translate(-50%, -50%)";
+                    container.appendChild(el);
+                }
+            }
+
+            generateLetters(outer, 155, true);
+            generateLetters(inner, 110, false);
+
+            // 获取相对于圆心的角度
+            function getAngleFromCenter(clientX, clientY) {
+                const rect = inner.getBoundingClientRect();
+                const centerX = rect.left + rect.width / 2;
+                const centerY = rect.top + rect.height / 2;
+                return Math.atan2(clientY - centerY, clientX - centerX) * 180 / Math.PI;
+            }
+
+            // 开始拖动
+            function startDrag(e) {
+                e.preventDefault();
+                isDrag = true;
+                const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+                const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+                startAngle = getAngleFromCenter(clientX, clientY) - currentRotate;
+                inner.style.cursor = 'grabbing';
+            }
+
+            // 拖动中
+            function duringDrag(e) {
+                if (!isDrag) return;
+                e.preventDefault();
+                
+                const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+                const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+                const currentAngle = getAngleFromCenter(clientX, clientY);
+                let delta = currentAngle - startAngle - currentRotate;
+                
+                // 处理角度跨越
+                if (delta > 180) delta -= 360;
+                if (delta < -180) delta += 360;
+                
+                // 记录旋转方向
+                if (Math.abs(delta) > 2) {
+                    lastValidDirection = delta > 0 ? 'clockwise' : 'counterclockwise';
+                }
+                
+                currentRotate += delta;
+                inner.style.transform = `translate(-50%, -50%) rotate(${currentRotate}deg)`;
+                updateShift();
+                doMapping();
+            }
+
+            // 结束拖动
+            function endDrag() {
+                isDrag = false;
+                inner.style.cursor = 'grab';
+            }
+
+            // 绑定事件
+            inner.addEventListener("mousedown", startDrag);
+            inner.addEventListener("touchstart", startDrag, { passive: false });
+            
+            document.addEventListener("mousemove", duringDrag);
+            document.addEventListener("touchmove", duringDrag, { passive: false });
+            
+            document.addEventListener("mouseup", endDrag);
+            document.addEventListener("touchend", endDrag);
+            document.addEventListener("touchcancel", endDrag);
+
+            // 更新偏移显示
+            function updateShift() {
+                // 计算内盘A的角度
+                let innerAAngle = (-90 + currentRotate) % 360;
+                if (innerAAngle < 0) innerAAngle += 360;
+                
+                // 计算顺时针角度差
+                let clockwiseAngle = (innerAAngle - (-90) + 360) % 360;
+                let clockwiseSteps = Math.round(clockwiseAngle / stepAngle) % 26;
+                let counterclockwiseSteps = 26 - clockwiseSteps;
+                if (counterclockwiseSteps === 26) counterclockwiseSteps = 0;
+                
+                // 计算最短距离
+                let shortestSteps = Math.min(clockwiseSteps, counterclockwiseSteps);
+                
+                // 计算实际加密偏移
+                const rawShift = Math.round(currentRotate / stepAngle) % 26;
+                const realShift = (rawShift + 26) % 26;
+                
+                // 确定显示
+                let displayDirection = '向右';
+                let displaySteps = 0;
+                
+                if (shortestSteps === 0) {
+                    displayDirection = '向右';
+                    displaySteps = 0;
+                } else if (shortestSteps === 13) {
+                    // A到N边界
+                    if (lastValidDirection === 'clockwise') {
+                        displayDirection = '向右';
+                        displaySteps = 13;
+                    } else if (lastValidDirection === 'counterclockwise') {
+                        displayDirection = '向左';
+                        displaySteps = 13;
+                    } else {
+                        displayDirection = '向右';
+                        displaySteps = 13;
+                    }
+                } else {
+                    if (clockwiseSteps <= 13) {
+                        displayDirection = '向右';
+                        displaySteps = clockwiseSteps;
+                    } else {
+                        displayDirection = '向左';
+                        displaySteps = counterclockwiseSteps;
+                    }
+                }
+                
+                // 更新显示
+                if (displaySteps === 0) {
+                    shiftText.textContent = "偏移 0 位";
+                } else {
+                    shiftText.textContent = `${displayDirection}偏移 ${displaySteps} 位`;
+                }
+                
+                // 播放声音
+                if (realShift !== lastShift) {
+                    playClickSound();
+                    lastShift = realShift;
+                }
+            }
+
+            // 加密映射
+            function doMapping() {
+                const rawShift = Math.round(currentRotate / stepAngle) % 26;
+                const realShift = (rawShift + 26) % 26;
+                const inputText = cipherInput.value.toUpperCase();
+                let output = "";
+                
+                for (const c of inputText) {
+                    if (letters.includes(c)) {
+                        const inputIndex = letters.indexOf(c);
+                        const outputIndex = (inputIndex + realShift) % 26;
+                        output += letters[outputIndex];
+                    } else {
+                        output += c;
+                    }
+                }
+                plainOutput.value = output;
+            }
+
+            // 复位
+            function reset() {
+                currentRotate = 0;
+                lastValidDirection = null;
+                inner.style.transform = `translate(-50%, -50%) rotate(0deg)`;
+                updateShift();
+                doMapping();
+                playClickSound();
+            }
+
+            // 绑定按钮事件
+            if (resetBtn) resetBtn.addEventListener("click", reset);
+            if (cipherInput) cipherInput.addEventListener("input", doMapping);
+
+            // 初始化显示
+            updateShift();
+            doMapping();
+        }
+    </script>
+</body>
+</html>
